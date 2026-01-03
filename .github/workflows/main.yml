@@ -1,0 +1,70 @@
+name: Windows RDP via Tailscale
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360  # Keep session alive up to 6 hours
+
+    steps:
+    # -------------------------------
+    # 1. Checkout repository (standard)
+    # -------------------------------
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # -------------------------------
+    # 2. Enable Remote Desktop (RDP)
+    # -------------------------------
+    - name: Enable RDP
+      run: |
+        reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v fDenyTSConnections /t REG_DWORD /d 0 /f
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+    # -------------------------------
+    # 3. Create RDP User
+    # -------------------------------
+    - name: Create RDP User
+      run: |
+        $username = "rdpuser"
+        $password = "P@ssw0rd123!"
+        net user $username $password /add
+        net localgroup administrators $username /add
+        Write-Host "RDP_USERNAME=$username"
+        Write-Host "RDP_PASSWORD=$password"
+
+    # -------------------------------
+    # 4. Install Tailscale
+    # -------------------------------
+    - name: Install Tailscale
+      run: |
+        Invoke-WebRequest "https://pkgs.tailscale.com/stable/tailscale-ipn-setup.exe" -OutFile "tailscale.exe"
+        Start-Process -Wait "tailscale.exe" "/quiet"
+
+    # -------------------------------
+    # 5. Authenticate Tailscale (using auth key secret)
+    # -------------------------------
+    - name: Start Tailscale
+      run: |
+        tailscale up --authkey $Env:TAILSCALE_AUTH_KEY --accept-routes
+        Start-Sleep -Seconds 10
+        $ip = tailscale ip -4
+        Write-Host "=============================="
+        Write-Host "RDP USERNAME: rdpuser"
+        Write-Host "RDP PASSWORD: P@ssw0rd123!"
+        Write-Host "TAILSCALE IP: $ip"
+        Write-Host "=============================="
+      env:
+        TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+
+    # -------------------------------
+    # 6. Keep Runner Alive (Long Session)
+    # -------------------------------
+    - name: Keep Alive
+      run: |
+        Write-Host "RDP is running over Tailscale. Keeping session alive..."
+        while ($true) {
+          Start-Sleep -Seconds 300
+        }
